@@ -30,7 +30,8 @@
 </div>
 
 <script type="module">
-    import { pipeline } from 'https://jsdelivr.net';
+    // FIX 1: Correct Import URL for Transformers.js v3 (WebGPU support)
+    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
 
     const status = document.getElementById('status');
     const chat = document.getElementById('chat');
@@ -41,21 +42,28 @@
 
     async function loadAI() {
         try {
-            // Using the ultra-light 270M model for fastest "non-techie" experience
+            status.innerText = "Initializing WebGPU...";
+            
+            // FIX 2: Correct model ID and device config
+            // q4f16 is the standard compressed format for WebGPU that balances speed/quality
             generator = await pipeline('text-generation', 'onnx-community/gemma-3-270m-it-ONNX', {
-                device: 'webgpu', // Uses GPU if available, falls back to CPU automatically
-                dtype: 'q4',      // 4-bit compression
+                device: 'webgpu', 
+                dtype: 'q4f16',   
                 progress_callback: (p) => {
                     if (p.status === 'progress') {
                         status.innerText = `Downloading Model: ${Math.round(p.progress)}%`;
+                    } else if (p.status === 'ready') {
+                        status.innerText = "Compiling shaders... (this may take a moment)";
                     }
                 }
             });
+
             status.innerText = "✅ AI is ready and running locally on your device.";
             input.disabled = false;
             btn.disabled = false;
+            input.focus();
         } catch (e) {
-            status.innerText = "Error: Your browser might not support WebGPU. Try Chrome or Edge.";
+            status.innerText = "Error: WebGPU may not be enabled or supported. Try Chrome/Edge desktop.";
             console.error(e);
         }
     }
@@ -68,10 +76,30 @@
         chat.innerHTML += `<div class="msg user">${text}</div>`;
         input.value = '';
         btn.disabled = true;
+        chat.scrollTop = chat.scrollHeight;
+
+        // FIX 3: Apply Gemma Chat Template
+        // Raw text often confuses instruction-tuned models. This format helps it understand who is talking.
+        const messages = [
+            { role: "user", content: text }
+        ];
         
-        const response = await generator(text, { max_new_tokens: 120, temperature: 0.7 });
-        
-        chat.innerHTML += `<div class="msg ai">${response[0].generated_text.replace(text, '')}</div>`;
+        try {
+            const output = await generator(messages, { 
+                max_new_tokens: 128, 
+                temperature: 0.7,
+                do_sample: true 
+            });
+
+            // The pipeline returns a list of messages; we want the last one (the assistant's reply)
+            const aiResponse = output[0].generated_text.at(-1).content;
+            
+            chat.innerHTML += `<div class="msg ai">${aiResponse}</div>`;
+        } catch (err) {
+            chat.innerHTML += `<div class="msg ai" style="color:red">Error generating response.</div>`;
+            console.error(err);
+        }
+
         chat.scrollTop = chat.scrollHeight;
         btn.disabled = false;
     }
