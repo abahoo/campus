@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Gemma AI - Private & Offline</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: system-ui; max-width: 800px; margin: 0 auto; padding: 20px; background: #f4f4f9; }
+        #container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        #status { color: #666; font-size: 0.9rem; margin-bottom: 10px; padding: 10px; border-radius: 5px; background: #eee; }
+        #chat { height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 10px; border-radius: 8px; max-width: 80%; }
+        .user { background: #007bff; color: white; align-self: flex-end; }
+        .ai { background: #e9e9eb; color: #333; align-self: flex-start; }
+        .controls { display: flex; gap: 10px; }
+        input { flex-grow: 1; padding: 12px; border: 1px solid #ddd; border-radius: 8px; outline: none; }
+        button { padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <h2>Gemma 3 (Ultra-Light)</h2>
+    <div id="status">Loading AI Engine...</div>
+    <div id="chat"></div>
+    <div class="controls">
+        <input type="text" id="userInput" placeholder="Ask me anything..." disabled>
+        <button id="sendBtn" disabled>Send</button>
+    </div>
+</div>
+
+<script type="module">
+    import { pipeline } from 'https://jsdelivr.net';
+
+    const status = document.getElementById('status');
+    const chat = document.getElementById('chat');
+    const input = document.getElementById('userInput');
+    const btn = document.getElementById('sendBtn');
+
+    let generator;
+
+    async function loadAI() {
+        try {
+            // Using the ultra-light 270M model for fastest "non-techie" experience
+            generator = await pipeline('text-generation', 'onnx-community/gemma-3-270m-it-ONNX', {
+                device: 'webgpu', // Uses GPU if available, falls back to CPU automatically
+                dtype: 'q4',      // 4-bit compression
+                progress_callback: (p) => {
+                    if (p.status === 'progress') {
+                        status.innerText = `Downloading Model: ${Math.round(p.progress)}%`;
+                    }
+                }
+            });
+            status.innerText = "✅ AI is ready and running locally on your device.";
+            input.disabled = false;
+            btn.disabled = false;
+        } catch (e) {
+            status.innerText = "Error: Your browser might not support WebGPU. Try Chrome or Edge.";
+            console.error(e);
+        }
+    }
+
+    async function generate() {
+        const text = input.value.trim();
+        if (!text) return;
+
+        // Update UI
+        chat.innerHTML += `<div class="msg user">${text}</div>`;
+        input.value = '';
+        btn.disabled = true;
+        
+        const response = await generator(text, { max_new_tokens: 120, temperature: 0.7 });
+        
+        chat.innerHTML += `<div class="msg ai">${response[0].generated_text.replace(text, '')}</div>`;
+        chat.scrollTop = chat.scrollHeight;
+        btn.disabled = false;
+    }
+
+    btn.onclick = generate;
+    input.onkeypress = (e) => { if(e.key === 'Enter') generate(); };
+
+    loadAI();
+</script>
+</body>
+</html>
